@@ -1,5 +1,6 @@
 const axios = require('axios')
-const { getWhatsAppConfig } = require('../config/whatsapp')
+const twilio = require('twilio')
+const { getWhatsAppConfig, isWhatsAppConfigured } = require('../config/whatsapp')
 const { formatInr } = require('../utils/money')
 
 function buildOrderMessage(order) {
@@ -40,13 +41,15 @@ function buildOrderMessage(order) {
   ].join('\n')
 }
 
-async function sendOrderNotification(order) {
-  const config = getWhatsAppConfig()
+function toWhatsAppAddress(number) {
+  const raw = String(number).trim()
+  if (raw.startsWith('whatsapp:')) return raw
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  return `whatsapp:+${digits}`
+}
 
-  if (!config.accessToken || !config.phoneNumberId || !config.businessNumber) {
-    throw new Error('WhatsApp is not configured')
-  }
-
+async function sendViaMeta(config, body) {
   const to = String(config.businessNumber).replace(/\D/g, '')
   const url = `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`
 
@@ -60,7 +63,7 @@ async function sendOrderNotification(order) {
         type: 'text',
         text: {
           preview_url: false,
-          body: buildOrderMessage(order)
+          body
         }
       },
       {
@@ -75,6 +78,42 @@ async function sendOrderNotification(order) {
     const apiMessage = err.response?.data?.error?.message
     throw new Error(apiMessage || err.message || 'WhatsApp request failed')
   }
+}
+
+async function sendViaTwilio(config, body) {
+  const client = twilio(config.twilioAccountSid, config.twilioAuthToken)
+  const to = toWhatsAppAddress(config.businessNumber)
+
+  if (!to) {
+    throw new Error('WhatsApp business number is not configured')
+  }
+
+  try {
+    await client.messages.create({
+      from: config.twilioFrom,
+      to,
+      body
+    })
+  } catch (err) {
+    throw new Error(err.message || 'Twilio WhatsApp request failed')
+  }
+}
+
+async function sendOrderNotification(order) {
+  const config = getWhatsAppConfig()
+
+  if (!isWhatsAppConfigured(config)) {
+    throw new Error('WhatsApp is not configured')
+  }
+
+  const body = buildOrderMessage(order)
+
+  if (config.provider === 'twilio') {
+    await sendViaTwilio(config, body)
+    return
+  }
+
+  await sendViaMeta(config, body)
 }
 
 module.exports = { sendOrderNotification, buildOrderMessage }
