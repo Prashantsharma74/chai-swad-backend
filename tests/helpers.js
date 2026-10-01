@@ -14,6 +14,7 @@ function orderBody(menuItemId, overrides = {}) {
   return {
     customer: customer(),
     tableNumber: 5,
+    location: { lat: 22.763712, lng: 75.898557 },
     items: [{ menuItemId: String(menuItemId), quantity: 2 }],
     ...overrides
   }

@@ -106,7 +106,10 @@ describe('Health and contact', () => {
       address: 'Vijay Nagar, Indore',
       instagram: 'https://instagram.com/chaiswad',
       googleMapsUrl: 'https://maps.google.com/?q=Chai+Swad',
-      openingHours: '8:00 AM – 10:00 PM'
+      openingHours: '8:00 AM – 10:00 PM',
+      latitude: 22.763712,
+      longitude: 75.898557,
+      deliveryRadiusMeters: 3000
     })
   })
 })

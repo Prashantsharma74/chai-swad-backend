@@ -5,10 +5,21 @@ const { distanceMeters } = require('../utils/geo')
 const { getCafeCoordinates, getDeliveryRadiusMeters } = require('../config/delivery')
 
 let cachedCafeFromAddress = null
+const geocodeCache = new Map()
+const GEOCODE_CACHE_MAX = 200
+
+function normalizeAddressKey(address) {
+  return String(address || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
 
 async function geocodeAddress(address) {
   const query = String(address || '').trim()
   if (query.length < 6) return null
+
+  const cacheKey = normalizeAddressKey(query)
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey)
+  }
 
   try {
     const response = await axios.get('https://nominatim.openstreetmap.org/search', {
@@ -28,7 +39,13 @@ async function geocodeAddress(address) {
     const lat = Number(result?.lat)
     const lng = Number(result?.lon)
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-    return { lat, lng }
+    const point = { lat, lng }
+    if (geocodeCache.size >= GEOCODE_CACHE_MAX) {
+      const oldest = geocodeCache.keys().next().value
+      geocodeCache.delete(oldest)
+    }
+    geocodeCache.set(cacheKey, point)
+    return point
   } catch (err) {
     logger.error('Address lookup failed', { message: err.message })
     return null
