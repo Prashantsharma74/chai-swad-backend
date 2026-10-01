@@ -12,7 +12,8 @@
     "demo": "node src/demoServer.js",
     "start": "node src/server.js",
     "seed": "node src/seed/menuSeed.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "test:whatsapp": "node scripts/test-whatsapp.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
