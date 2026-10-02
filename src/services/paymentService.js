@@ -7,7 +7,18 @@ const { generateOrderNumber } = require('../utils/orderNumber')
 const { getRazorpay } = require('../config/razorpay')
 const { calculateCart, toPublicOrder } = require('./orderService')
 const { assertWithinDeliveryRadius } = require('./deliveryService')
-const { sendOrderNotification } = require('./whatsappService')
+const { sendOrderEmail } = require('./emailService')
+const { getEmailConfig, isEmailConfigured } = require('../config/email')
+
+function emailConfigForLogs() {
+  const config = getEmailConfig()
+  return {
+    configured: isEmailConfigured(config),
+    channel: 'resend',
+    notifyTo: config.notifyTo || '',
+    from: config.from || ''
+  }
+}
 
 function verifyRazorpaySignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   const secret = process.env.RAZORPAY_KEY_SECRET
@@ -73,7 +84,8 @@ async function createPaymentOrder(input) {
       razorpayOrderId: razorpayOrder.id,
       status: 'PENDING'
     },
-    whatsappNotification: { sent: false, error: '' }
+    whatsappNotification: { sent: false, error: '' },
+    emailNotification: { sent: false, error: '' }
   })
 
   logger.info('Payment order created', {
@@ -90,27 +102,39 @@ async function createPaymentOrder(input) {
 }
 
 async function notifyCafe(order) {
+  logger.info('notifyCafe started', {
+    orderNumber: order.orderNumber,
+    orderId: String(order._id),
+    ...emailConfigForLogs()
+  })
+
   try {
-    await sendOrderNotification(order)
-    order.whatsappNotification = {
+    await sendOrderEmail(order)
+    order.emailNotification = {
       sent: true,
       sentAt: new Date(),
       error: ''
     }
-    logger.info('WhatsApp notification sent', { orderNumber: order.orderNumber })
+    logger.info('Email notification sent', { orderNumber: order.orderNumber })
   } catch (err) {
-    const safeMessage = String(err.message || 'WhatsApp notification failed').slice(0, 300)
-    order.whatsappNotification = {
+    const safeMessage = String(err.message || 'Email notification failed').slice(0, 300)
+    order.emailNotification = {
       sent: false,
       error: safeMessage
     }
-    logger.error('WhatsApp notification failed', {
+    logger.error('Email notification failed', {
       orderNumber: order.orderNumber,
       error: safeMessage
     })
   }
 
   await order.save()
+
+  logger.info('notifyCafe finished', {
+    orderNumber: order.orderNumber,
+    sent: Boolean(order.emailNotification?.sent),
+    error: order.emailNotification?.error || ''
+  })
 }
 
 async function confirmPendingOrder(razorpayOrderId, razorpayPaymentId) {
@@ -147,6 +171,9 @@ async function confirmPendingOrder(razorpayOrderId, razorpayPaymentId) {
 async function verifyPayment(payload) {
   const razorpayOrderId = payload.razorpay_order_id
   const razorpayPaymentId = payload.razorpay_payment_id
+
+  logger.info('verifyPayment: checking Razorpay signature', { razorpayOrderId })
+
   const signatureIsValid = verifyRazorpaySignature({
     razorpayOrderId,
     razorpayPaymentId,
@@ -154,12 +181,19 @@ async function verifyPayment(payload) {
   })
 
   if (!signatureIsValid) {
+    logger.error('verifyPayment: invalid Razorpay signature', {
+      razorpayOrderId,
+      hasPaymentId: Boolean(razorpayPaymentId),
+      hasSignature: Boolean(payload.razorpay_signature)
+    })
     await Order.updateOne(
       { 'payment.razorpayOrderId': razorpayOrderId, 'payment.status': 'PENDING' },
       { $set: { 'payment.status': 'FAILED' } }
     )
     throw new AppError('Payment verification failed', 400)
   }
+
+  logger.info('verifyPayment: signature valid', { razorpayOrderId })
 
   const alreadyPaid = await Order.findOne({
     'payment.razorpayOrderId': razorpayOrderId,
@@ -169,7 +203,10 @@ async function verifyPayment(payload) {
   if (alreadyPaid) {
     logger.info('Payment verification successful', {
       orderNumber: alreadyPaid.orderNumber,
-      duplicate: true
+      duplicate: true,
+      emailSkipped: true,
+      priorEmailSent: Boolean(alreadyPaid.emailNotification?.sent),
+      priorEmailError: alreadyPaid.emailNotification?.error || ''
     })
     return toPublicOrder(alreadyPaid)
   }
@@ -185,16 +222,22 @@ async function verifyPayment(payload) {
     if (paidNow) {
       logger.info('Payment verification successful', {
         orderNumber: paidNow.orderNumber,
-        duplicate: true
+        duplicate: true,
+        emailSkipped: true
       })
       return toPublicOrder(paidNow)
     }
 
+    logger.error('verifyPayment: pending order not found after confirm', { razorpayOrderId })
     throw new AppError('Payment order not found', 404)
   }
 
   logger.info('Payment verification successful', { orderNumber: confirmed.orderNumber })
   logger.info('Order confirmed', { orderNumber: confirmed.orderNumber })
+  logger.info('verifyPayment: starting notifyCafe (email)', {
+    orderNumber: confirmed.orderNumber,
+    ...emailConfigForLogs()
+  })
   await notifyCafe(confirmed)
   return toPublicOrder(confirmed)
 }

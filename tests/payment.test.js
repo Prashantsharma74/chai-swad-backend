@@ -1,5 +1,5 @@
-jest.mock('axios', () => ({
-  post: jest.fn()
+jest.mock('../src/services/emailService', () => ({
+  sendOrderEmail: jest.fn().mockResolvedValue(undefined)
 }))
 
 jest.mock('razorpay', () => {
@@ -12,8 +12,8 @@ jest.mock('razorpay', () => {
 })
 
 const request = require('supertest')
-const axios = require('axios')
 const Razorpay = require('razorpay')
+const { sendOrderEmail } = require('../src/services/emailService')
 const app = require('../src/server')
 const MenuItem = require('../src/models/MenuItem')
 const Order = require('../src/models/Order')
@@ -21,7 +21,7 @@ const { MENU_ITEMS } = require('../src/seed/menuSeed')
 const { orderBody, signPayment } = require('./helpers')
 const { todayKey } = require('../src/utils/orderNumber')
 
-describe('Payments, WhatsApp, and confirmed orders', () => {
+describe('Payments, email alerts, and confirmed orders', () => {
   let masala
   let coffee
 
@@ -29,7 +29,8 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     await MenuItem.insertMany(MENU_ITEMS)
     masala = await MenuItem.findOne({ slug: 'masala-sandwich' })
     coffee = await MenuItem.findOne({ slug: 'cold-coffee' })
-    axios.post.mockResolvedValue({ data: { messages: [{ id: 'wamid.test' }] } })
+    sendOrderEmail.mockClear()
+    sendOrderEmail.mockResolvedValue(undefined)
     Razorpay.__create.mockImplementation(async (options) => ({
       id: `order_${options.receipt}`,
       amount: options.amount,
@@ -77,10 +78,10 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
       error: null
     })
     expect(await Order.countDocuments()).toBe(0)
-    expect(axios.post).not.toHaveBeenCalled()
+    expect(sendOrderEmail).not.toHaveBeenCalled()
   })
 
-  test('verifies a valid signature, confirms the order, and notifies WhatsApp once', async () => {
+  test('verifies a valid signature, confirms the order, and sends email once', async () => {
     const created = await request(app).post('/api/payment/create').send({
       ...payload(),
       items: [
@@ -106,21 +107,16 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     expect(response.body.data.order.total).toBe(190)
     expect(response.body.data.order.tableNumber).toBe(5)
     expect(JSON.stringify(response.body)).not.toContain(process.env.RAZORPAY_KEY_SECRET)
-    expect(JSON.stringify(response.body)).not.toContain(process.env.WHATSAPP_ACCESS_TOKEN)
+    expect(JSON.stringify(response.body)).not.toContain(process.env.RESEND_API_KEY)
 
     const saved = await Order.findById(response.body.data.order.id)
-    expect(saved.whatsappNotification.sent).toBe(true)
-    expect(axios.post).toHaveBeenCalledTimes(1)
+    expect(saved.emailNotification.sent).toBe(true)
+    expect(sendOrderEmail).toHaveBeenCalledTimes(1)
 
-    const [url, body, config] = axios.post.mock.calls[0]
-    expect(url).toContain('graph.facebook.com')
-    expect(body.to).toBe('919876543210')
-    expect(body.text.body).toContain(`Order No: #${saved.orderNumber}`)
-    expect(body.text.body).toContain('Rahul Sharma')
-    expect(body.text.body).toContain('TOTAL PAID: ₹190')
-    expect(body.text.body).toContain('Status: ORDER RECEIVED')
-    expect(config.headers.Authorization).toBe(`Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`)
-    expect(JSON.stringify(saved.whatsappNotification)).not.toContain(process.env.WHATSAPP_ACCESS_TOKEN)
+    const [orderArg] = sendOrderEmail.mock.calls[0]
+    expect(orderArg.orderNumber).toBe(saved.orderNumber)
+    expect(orderArg.customer.name).toBe('Rahul Sharma')
+    expect(JSON.stringify(saved.emailNotification)).not.toContain(process.env.RESEND_API_KEY)
   })
 
   test('rejects an invalid signature and does not confirm the order', async () => {
@@ -139,14 +135,14 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     const saved = await Order.findOne({ 'payment.razorpayOrderId': razorpayOrderId })
     expect(saved.payment.status).toBe('FAILED')
     expect(saved.orderStatus).toBeUndefined()
-    expect(axios.post).not.toHaveBeenCalled()
+    expect(sendOrderEmail).not.toHaveBeenCalled()
   })
 
-  test('keeps a paid order when WhatsApp fails', async () => {
-    axios.post.mockRejectedValue(new Error('WhatsApp unavailable'))
+  test('keeps a paid order when email fails', async () => {
+    sendOrderEmail.mockRejectedValue(new Error('Resend unavailable'))
     const created = await request(app).post('/api/payment/create').send(payload())
     const razorpayOrderId = created.body.data.razorpayOrderId
-    const paymentId = 'pay_wa_fail'
+    const paymentId = 'pay_email_fail'
 
     const response = await request(app).post('/api/payment/verify').send({
       razorpay_order_id: razorpayOrderId,
@@ -159,8 +155,8 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     expect(response.body.data.order.orderStatus).toBe('RECEIVED')
 
     const saved = await Order.findById(response.body.data.order.id)
-    expect(saved.whatsappNotification.sent).toBe(false)
-    expect(saved.whatsappNotification.error).toContain('WhatsApp unavailable')
+    expect(saved.emailNotification.sent).toBe(false)
+    expect(saved.emailNotification.error).toContain('Resend unavailable')
   })
 
   test('returns the existing order for a duplicate verification without a second notification', async () => {
@@ -179,11 +175,11 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     expect(second.status).toBe(200)
     expect(second.body.data.order.orderNumber).toBe(first.body.data.order.orderNumber)
     expect(await Order.countDocuments({ 'payment.status': 'PAID' })).toBe(1)
-    expect(axios.post).toHaveBeenCalledTimes(1)
+    expect(sendOrderEmail).toHaveBeenCalledTimes(1)
   })
 
-  test('does not send a second WhatsApp message when the first attempt failed', async () => {
-    axios.post.mockRejectedValue(new Error('WhatsApp unavailable'))
+  test('does not send a second email when the first attempt failed', async () => {
+    sendOrderEmail.mockRejectedValue(new Error('Resend unavailable'))
     const created = await request(app).post('/api/payment/create').send(payload())
     const razorpayOrderId = created.body.data.razorpayOrderId
     const body = {
@@ -195,7 +191,7 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     await request(app).post('/api/payment/verify').send(body)
     await request(app).post('/api/payment/verify').send(body)
 
-    expect(axios.post).toHaveBeenCalledTimes(1)
+    expect(sendOrderEmail).toHaveBeenCalledTimes(1)
   })
 
   test('gets a confirmed order and lists phone history newest first', async () => {
@@ -231,7 +227,7 @@ describe('Payments, WhatsApp, and confirmed orders', () => {
     )
     expect(fetched.body.data.order.customer.phone).toBe('9876543210')
     expect(fetched.body.data.order.payment).toEqual({ provider: 'razorpay', status: 'PAID' })
-    expect(fetched.body.data.order.whatsappNotification).toBeUndefined()
+    expect(fetched.body.data.order.emailNotification).toBeUndefined()
 
     const pending = await request(app).post('/api/payment/create').send(payload())
     const history = await request(app).get('/api/orders/by-phone').query({ phone: '9876543210' })

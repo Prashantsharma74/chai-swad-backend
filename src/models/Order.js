@@ -36,6 +36,11 @@ const orderSchema = new mongoose.Schema(
       sent: { type: Boolean, default: false },
       sentAt: { type: Date },
       error: { type: String, default: '' }
+    },
+    emailNotification: {
+      sent: { type: Boolean, default: false },
+      sentAt: { type: Date },
+      error: { type: String, default: '' }
     }
   },
   { timestamps: true }
