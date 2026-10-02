@@ -1,6 +1,13 @@
 # Order email alerts (Resend)
 
-After `POST /api/payment/verify` succeeds, the cafe receives an email via [Resend](https://resend.com).
+After `POST /api/payment/verify` succeeds:
+
+1. **Cafe** — full order details to `ORDER_NOTIFY_EMAIL` (e.g. `prashantsharma7470@gmail.com`).
+2. **Customer** — “order received” confirmation to the email they entered at checkout.
+
+Both use [Resend](https://resend.com). If you only get the customer email, **`ORDER_NOTIFY_EMAIL` is missing on Render** (customer emails only need `RESEND_API_KEY`).
+
+Check production: `GET /api/health` → `notifications.cafeNotifyConfigured` should be `true`.
 
 ## Environment variables
 

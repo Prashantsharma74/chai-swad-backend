@@ -11,6 +11,8 @@ const menuRoutes = require('./routes/menuRoutes')
 const orderRoutes = require('./routes/orderRoutes')
 const paymentRoutes = require('./routes/paymentRoutes')
 const contactRoutes = require('./routes/contactRoutes')
+const logger = require('./utils/logger')
+const { getEmailStatus, isResendReady } = require('./config/email')
 
 const app = express()
 
@@ -30,9 +32,16 @@ app.use('/api', apiLimiter)
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'Chai Swad API is running'
+    message: 'Chai Swad API is running',
+    notifications: getEmailStatus()
   })
 })
+
+if (process.env.NODE_ENV !== 'test' && isResendReady() && !getEmailStatus().cafeNotifyConfigured) {
+  logger.warn(
+    'ORDER_NOTIFY_EMAIL is not set — you will not receive cafe order alerts. Set ORDER_NOTIFY_EMAIL=prashantsharma7470@gmail.com on Render.'
+  )
+}
 
 app.use('/api/menu', menuRoutes)
 app.use('/api/orders', orderRoutes)

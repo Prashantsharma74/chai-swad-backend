@@ -18,6 +18,7 @@ const orderSchema = new mongoose.Schema(
     customer: {
       name: { type: String, required: true, trim: true },
       phone: { type: String, required: true, trim: true },
+      email: { type: String, required: true, trim: true, lowercase: true },
       address: { type: String, required: true, trim: true }
     },
     tableNumber: { type: Number, min: 1 },
@@ -38,6 +39,11 @@ const orderSchema = new mongoose.Schema(
       error: { type: String, default: '' }
     },
     emailNotification: {
+      sent: { type: Boolean, default: false },
+      sentAt: { type: Date },
+      error: { type: String, default: '' }
+    },
+    customerEmailNotification: {
       sent: { type: Boolean, default: false },
       sentAt: { type: Date },
       error: { type: String, default: '' }

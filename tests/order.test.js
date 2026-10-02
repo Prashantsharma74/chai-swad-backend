@@ -87,7 +87,16 @@ describe('Order calculation', () => {
   test('rejects an invalid phone number', async () => {
     const response = await request(app)
       .post('/api/orders')
-      .send(orderBody(masala._id, { customer: { name: 'Rahul Sharma', phone: '12345', address: 'Vijay Nagar, Indore' } }))
+      .send(
+        orderBody(masala._id, {
+          customer: {
+            name: 'Rahul Sharma',
+            phone: '12345',
+            email: 'rahul@example.com',
+            address: 'Vijay Nagar, Indore'
+          }
+        })
+      )
 
     expect(response.status).toBe(400)
     expect(response.body.message).toBe('Please enter a valid 10-digit mobile number.')
@@ -96,16 +105,37 @@ describe('Order calculation', () => {
   test('rejects a missing name', async () => {
     const response = await request(app)
       .post('/api/orders')
-      .send(orderBody(masala._id, { customer: { name: '   ', phone: '9876543210', address: 'Vijay Nagar, Indore' } }))
+      .send(
+        orderBody(masala._id, {
+          customer: { name: '   ', phone: '9876543210', email: 'rahul@example.com', address: 'Vijay Nagar, Indore' }
+        })
+      )
 
     expect(response.status).toBe(400)
     expect(response.body.message).toBe('Please enter your name.')
   })
 
+  test('rejects an invalid email', async () => {
+    const response = await request(app)
+      .post('/api/orders')
+      .send(
+        orderBody(masala._id, {
+          customer: { name: 'Rahul Sharma', phone: '9876543210', email: 'not-an-email', address: 'Vijay Nagar, Indore' }
+        })
+      )
+
+    expect(response.status).toBe(400)
+    expect(response.body.message).toBe('Please enter a valid email address.')
+  })
+
   test('rejects a missing address', async () => {
     const response = await request(app)
       .post('/api/orders')
-      .send(orderBody(masala._id, { customer: { name: 'Rahul Sharma', phone: '9876543210', address: '' } }))
+      .send(
+        orderBody(masala._id, {
+          customer: { name: 'Rahul Sharma', phone: '9876543210', email: 'rahul@example.com', address: '' }
+        })
+      )
 
     expect(response.status).toBe(400)
     expect(response.body.message).toBe('Please enter your address.')

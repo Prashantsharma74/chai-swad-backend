@@ -7,7 +7,7 @@ const { generateOrderNumber } = require('../utils/orderNumber')
 const { getRazorpay } = require('../config/razorpay')
 const { calculateCart, toPublicOrder } = require('./orderService')
 const { assertWithinDeliveryRadius } = require('./deliveryService')
-const { sendOrderEmail } = require('./emailService')
+const { sendOrderEmail, sendCustomerOrderEmail } = require('./emailService')
 const { getEmailConfig, isEmailConfigured } = require('../config/email')
 
 function emailConfigForLogs() {
@@ -72,6 +72,7 @@ async function createPaymentOrder(input) {
     customer: {
       name: input.customer.name,
       phone: input.customer.phone,
+      email: input.customer.email,
       address: input.customer.address
     },
     tableNumber: input.tableNumber,
@@ -85,7 +86,8 @@ async function createPaymentOrder(input) {
       status: 'PENDING'
     },
     whatsappNotification: { sent: false, error: '' },
-    emailNotification: { sent: false, error: '' }
+    emailNotification: { sent: false, error: '' },
+    customerEmailNotification: { sent: false, error: '' }
   })
 
   logger.info('Payment order created', {
@@ -128,12 +130,34 @@ async function notifyCafe(order) {
     })
   }
 
+  try {
+    await sendCustomerOrderEmail(order)
+    order.customerEmailNotification = {
+      sent: true,
+      sentAt: new Date(),
+      error: ''
+    }
+    logger.info('Customer order email sent', { orderNumber: order.orderNumber })
+  } catch (err) {
+    const safeMessage = String(err.message || 'Customer email failed').slice(0, 300)
+    order.customerEmailNotification = {
+      sent: false,
+      error: safeMessage
+    }
+    logger.error('Customer order email failed', {
+      orderNumber: order.orderNumber,
+      error: safeMessage
+    })
+  }
+
   await order.save()
 
   logger.info('notifyCafe finished', {
     orderNumber: order.orderNumber,
-    sent: Boolean(order.emailNotification?.sent),
-    error: order.emailNotification?.error || ''
+    cafeEmailSent: Boolean(order.emailNotification?.sent),
+    cafeEmailError: order.emailNotification?.error || '',
+    customerEmailSent: Boolean(order.customerEmailNotification?.sent),
+    customerEmailError: order.customerEmailNotification?.error || ''
   })
 }
 

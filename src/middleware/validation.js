@@ -37,6 +37,16 @@ const orderSchema = z.object({
         .min(1, 'Please enter your name.')
         .max(80, 'Name is too long'),
       phone: phoneSchema,
+      email: z
+        .string({
+          required_error: 'Please enter your email address.',
+          invalid_type_error: 'Please enter your email address.'
+        })
+        .trim()
+        .toLowerCase()
+        .min(1, 'Please enter your email address.')
+        .max(120, 'Email is too long')
+        .email('Please enter a valid email address.'),
       address: z
         .string({
           required_error: 'Please enter your address.',

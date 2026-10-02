@@ -131,6 +131,18 @@ function buildOrderEmailHtml(order, cafeName = 'Chai Swad') {
                           </a>
                         </td>
                       </tr>
+                      ${
+                        order.customer.email
+                          ? `<tr>
+                        <td style="padding:6px 0;font-size:14px;color:${BRAND.cocoa};vertical-align:top;">Email</td>
+                        <td style="padding:6px 0;font-size:14px;font-weight:500;color:${BRAND.brown};">
+                          <a href="mailto:${escapeHtml(order.customer.email)}" style="color:${BRAND.terracotta};text-decoration:none;">
+                            ${escapeHtml(order.customer.email)}
+                          </a>
+                        </td>
+                      </tr>`
+                          : ''
+                      }
                       <tr>
                         <td style="padding:6px 0;font-size:14px;color:${BRAND.cocoa};vertical-align:top;">Address</td>
                         <td style="padding:6px 0;font-size:14px;font-weight:500;color:${BRAND.brown};line-height:1.45;">

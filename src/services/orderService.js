@@ -34,6 +34,7 @@ function toPublicOrder(order) {
     customer: {
       name: order.customer.name,
       phone: order.customer.phone,
+      email: order.customer.email,
       address: order.customer.address
     },
     tableNumber: order.tableNumber ?? null,
@@ -119,6 +120,7 @@ async function quoteOrder(input) {
     customer: {
       name: input.customer.name,
       phone: input.customer.phone,
+      email: input.customer.email,
       address: input.customer.address
     },
     tableNumber: input.tableNumber ?? null,

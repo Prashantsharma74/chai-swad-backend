@@ -5,6 +5,7 @@ function customer(overrides = {}) {
   return {
     name: 'Rahul Sharma',
     phone: '9876543210',
+    email: 'rahul@example.com',
     address: 'Vijay Nagar, Indore',
     ...overrides
   }

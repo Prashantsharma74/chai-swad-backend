@@ -1,5 +1,6 @@
 jest.mock('../src/services/emailService', () => ({
-  sendOrderEmail: jest.fn().mockResolvedValue(undefined)
+  sendOrderEmail: jest.fn().mockResolvedValue(undefined),
+  sendCustomerOrderEmail: jest.fn().mockResolvedValue(undefined)
 }))
 
 jest.mock('razorpay', () => {
@@ -13,7 +14,7 @@ jest.mock('razorpay', () => {
 
 const request = require('supertest')
 const Razorpay = require('razorpay')
-const { sendOrderEmail } = require('../src/services/emailService')
+const { sendOrderEmail, sendCustomerOrderEmail } = require('../src/services/emailService')
 const app = require('../src/server')
 const MenuItem = require('../src/models/MenuItem')
 const Order = require('../src/models/Order')
@@ -31,6 +32,8 @@ describe('Payments, email alerts, and confirmed orders', () => {
     coffee = await MenuItem.findOne({ slug: 'cold-coffee' })
     sendOrderEmail.mockClear()
     sendOrderEmail.mockResolvedValue(undefined)
+    sendCustomerOrderEmail.mockClear()
+    sendCustomerOrderEmail.mockResolvedValue(undefined)
     Razorpay.__create.mockImplementation(async (options) => ({
       id: `order_${options.receipt}`,
       amount: options.amount,
@@ -111,11 +114,15 @@ describe('Payments, email alerts, and confirmed orders', () => {
 
     const saved = await Order.findById(response.body.data.order.id)
     expect(saved.emailNotification.sent).toBe(true)
+    expect(saved.customerEmailNotification.sent).toBe(true)
     expect(sendOrderEmail).toHaveBeenCalledTimes(1)
+    expect(sendCustomerOrderEmail).toHaveBeenCalledTimes(1)
 
     const [orderArg] = sendOrderEmail.mock.calls[0]
     expect(orderArg.orderNumber).toBe(saved.orderNumber)
     expect(orderArg.customer.name).toBe('Rahul Sharma')
+    expect(orderArg.customer.email).toBe('rahul@example.com')
+    expect(response.body.data.order.customer.email).toBe('rahul@example.com')
     expect(JSON.stringify(saved.emailNotification)).not.toContain(process.env.RESEND_API_KEY)
   })
 
@@ -176,6 +183,7 @@ describe('Payments, email alerts, and confirmed orders', () => {
     expect(second.body.data.order.orderNumber).toBe(first.body.data.order.orderNumber)
     expect(await Order.countDocuments({ 'payment.status': 'PAID' })).toBe(1)
     expect(sendOrderEmail).toHaveBeenCalledTimes(1)
+    expect(sendCustomerOrderEmail).toHaveBeenCalledTimes(1)
   })
 
   test('does not send a second email when the first attempt failed', async () => {
